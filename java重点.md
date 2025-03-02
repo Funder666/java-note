@@ -2598,9 +2598,8 @@ public class DeepCopyWithSerialization {
 **一、概述**
 
 * minor gc：新生代eden区空间满时发生，只清理新生代
-
 * major gc：老年代空间满时发生，只清理老年代
-* full gc：清理新生代、老年代和方法区
+* full gc：清理新生代、老年代和方法区 
 
 **二、触发条件**
 
@@ -2615,6 +2614,20 @@ public class DeepCopyWithSerialization {
 * **调整 JVM 参数**：根据应用程序的内存需求合理设置 JVM 参数，增加堆内存大小
 * **监控和诊断**：使用 JVM 监控工具，如 VisualVM 或 JConsole，来监控内存使用情况和 GC 事件
 * **选择合适的垃圾收集器**：根据应用程序的特点选择合适的垃圾收集器，以减少 Full GC 的发生
+
+**四、一次完整的GC**
+
+**一次完整的GC流程**（对象分配过程）
+
+![image-20250302161752050](java重点.assets/image-20250302161752050.png)
+
+* 首先，任何新对象都分配到 eden 空间。两个幸存者空间开始时都是空的。
+* 当 eden 空间填满时，将触发一个Minor GC(年轻代的垃圾回收，也称为Young GC)，删除所有未引用的对象，大对象（需要大量连续内存空间的Java对象，如那种很长的字符串）直接进入老年代。
+* 所有被引用的对象作为存活对象，将移动到第一个幸存者空间S0，并标记年龄为1，即经历过一次Minor GC。之后每经过一次Minor GC，年龄+1。GC分代年龄存储在对象头的Mark Word里。
+* 当 eden 空间再次被填满时，会执行第二次Minor GC，将Eden和S0区中所有垃圾对象清除，并将存活对象复制到S1并年龄加1，此时S0变为空。
+* 如此反复在S0和S1之间切换几次之后，还存活的年龄等于15的对象（JDK8默认15，JDK9默认7，-XX:InitialTenuringThreshold=7）在下一次Minor GC时将放到老年代中。 
+* 如果老年代内存不足够存储新对象，则会执行Full GC（清空整个新生代和老年代）。
+* 当老年代满了时会触发Full GC或者Major GC（老年代的垃圾回收，清理整个老年代空间）。具体是Full GC还是Major GC取决于用哪个垃圾回收器，传统垃圾回收器会Full GC，G1（优先使用Mixed GC，清空部分新生代和老年代）、ZGC（直接抛出内存溢出错误）等现代回收器会避免Full GC。
 
 ### 内存泄漏和内存溢出
 
@@ -2674,10 +2687,6 @@ public void givenMap_whenEqualsAndHashCodeNotOverridden_thenMemoryLeak() {
 
 
 
-
-### System.gc()的条件，调用System.gc()一定会触发垃圾回收嘛
-
-​	提醒可以进行垃圾回收：在调用System.gc()时，JVM会根据当前的内存使用情况和垃圾回收策略等因素来判断是否需要执行垃圾回收。如果JVM认为当前内存不足，或者执行垃圾回收可以显著减少内存占用，那么就会立即执行垃圾回收操作。否则，JVM也有可能不立即执行垃圾回收，而是等待更合适的时机再执行。
 
 
 
@@ -2787,6 +2796,143 @@ public class StrongReferenceExample {
    ```
 
 
+
+### Jvm监控与调优
+
+**一、工具定位问题**
+
+**1、JDK自带的命令**
+
+* jps：查看正在运行的 Java 进程。
+
+  * 命令格式：jps [ options ] [ hostid ]，其中options参数：
+
+    * -q：仅仅显示 LVMID（local virtual machine id），即本地虚拟机唯一 id。不显示主类的名称等
+
+    * -l：输出应用程序主类的全类名或如果进程执行的是 jar 包，则输出 jar 完整路径
+
+    * -m：输出虚拟机进程启动时传递给主类 main() 的参数
+
+    * -v：列出虚拟机进程启动时的 JVM 参数。比如：-Xms20m -Xmx50m 是启动程序指定的 jvm 参数
+
+* jinfo：实时查看和修改指定进程的 JVM 配置参数。jinfo -flag查看和修改具体参数。
+  * 命令格式：jinfo [option] pid
+
+* jstat：是用于监视虚拟机各种运行状态信息的命令行工具。它可以显示本地或者远程虚拟机进程中的类加载、内存、垃圾收集、即时编译等运行时数据
+
+  * 命令格式：**jstat -<option> [-t] [-h<lines>] <vmid> [<interval> [<count>]]**
+
+    * option：
+
+      * **-gc：显示堆各分区大小、YGC,FGC次数和时长。**包括 Eden 区、两个 Survivor 区、老年代、永久代等的容量、已用空间、GC 时间合计等信息
+      * -gcutil：显示内容与 `-gc` 基本相同，但输出主要关注已使用空间占总空间的百分比
+
+      * 示例：` jstat -gc 70 250 10 `每250毫秒查询一次进程id70垃圾收集状况,一共查询10次
+
+    * -t：可以在打印的列加上Timestamp列，用于显示系统运行的时间
+
+    * -h：可以在周期性数据输出的时候，指定输出多少行以后输出一次表头
+
+    * vmid：Virtual Machine ID（ 进程的 pid）
+
+    * interval：执行每次的间隔时间，单位为毫秒
+
+    * count：用于指定输出多少次记录，缺省则会一直打印
+
+      
+
+* jstack：打印指定进程此刻的线程快照。定位线程长时间停顿的原因，例如死锁、等待资源、阻塞。如果有死锁会打印线程的互相占用资源情况。
+
+  * 命令格式：jstack [ option ] pid
+
+* **jmap**：JVM Memory Map，作用一方面是获取 dump 文件（堆转储快照文件，二进制文件），它还可以获取目标 Java 进程的内存相关信息，包括 Java 堆各区域的使用情况、堆中对象的统计信息、类加载信息等
+
+  * 命令格式：jmap -<option> [-t] [-h<lines>] <vmid> [<interval> [<count>]]
+
+  * 使用示例： **jmap -dump:live,format=b,file=pid.hprof <进程id>** 
+
+    > dump导出堆内存快照，live子选项可选的，表示指定活的对象到文件。dump出来的文件可以用MAT、VisualVM等工具，也可以使用jhat命令查看
+
+2、可视化工具
+
+* JDK自带的可视化监控工具
+
+  - jconsole
+
+  - Visual VM：Visual VM可以监视应用程序的 CPU、GC、堆、方法区、线程快照，查看JVM进程、JVM 参数、系统属性
+
+* MAT（Memory Analyzer Tool）工具是一款功能强大的 Java 堆内存分析器。可以用于查找内存泄漏以及查看内存消耗情况。MAT 可以分析 heap dump 文件。在进行内存分析时，只要获得了反映当前设备内存映像的 hprof 文件，通过 MAT 打开就可以直观地看到当前的内存信息。
+  
+
+**二、案例分享**
+
+**1、高cpu案例**
+
+* **大致步骤**
+
+  * 定位进程ID：通过top命令查看当前服务CPU使用最高的进程，获取到对应的pid（进程ID)
+
+  * 定位线程ID：使用top -Hp pid，显示指定进程下面的线程信息，找到消耗CPU最高的线程id
+
+  * 线程ID转十六进制：转十六进制是因为下一步jstack打印的线程快照（线程正在执行方法的堆栈集合）里线程id是十六进制。
+
+  * 定位代码：使用jstack pid | grep tid（十六进制），打印线程快照，找到线程执行的代码。一般如果有死锁的话就会显示线程互相占用情况。
+
+* 举例
+
+  * **第一步：**就是一个 `top`命令，基本上所有同学都用过这个命令。可以看到发现占用 CPU 100.5% 的线程是 Java 进程，进程 PID 为 `13731`。（可使用`jps`验证这个pid是否为java进程）
+
+  * **第二步：**使用`top -Hp 13731` 可以看到占用线程最高的进程id是`13756`。其他命令也可以使用（ps -Lfp pid或ps -mp pid -o THREAD, tid, time）
+
+  * **第三步：**10进制转16进制可以使用命令`printf '%x\n' 13756`或`echo "obase=16;13756"|bc` 。这里得到线程ID是`35bc`。
+
+    ```bash
+    admin@liuxiaohao-MacBook-Pro ~ %  printf '%x\n' 13756
+    35bc
+    admin@liuxiaohao-MacBook-Pro ~ % jstack 13731 > 13731.tdump
+    ```
+
+  * **第四步：**在使用`jstack`命令将Java进程的线程栈信息保存下来。在13731.tdump 文件中Ctrl+F搜索35bc，找到对应的线程ID，这里就看到了对应**线程名称**，以及最消耗cpu的是**哪一行代码**了。
+
+    ![image-20250302161505166](java重点.assets/image-20250302161505166.png)
+
+**2、高内存案例**
+
+* 配置Jvm参数：PrintGCDetails（打印gc日志）、 HeapDumpOnOutOfMemoryError（生成dump文件）
+  获取dump文件；
+
+* 使用内存分析工具对dump文件进行分析：Visualvm、Mat、Arthas等工具；   
+      // dump文件分析：找内存占用过大的对象->这个对象被谁引用（GC Root）->具体所在的代码
+
+* 修改验证。
+
+* 示例：
+
+  ```bash
+  admin@liuxiaohao-MacBook-Pro ~ % jps
+  34419 Launcher
+  30452 CpuDemo1
+  34420 MemoryDemo1
+  22662 Launcher
+  18265 Launcher
+  34602 Jps
+  42223 
+  admin@liuxiaohao-MacBook-Pro ~ % jstat -gcutil 34420
+    S0     S1     E      O      M     CCS    YGC     YGCT    FGC    FGCT     GCT   
+   44.80   0.00  50.70   0.01  91.71  85.36      2    0.130     0    0.000    0.130
+  admin@liuxiaohao-MacBook-Pro ~ % jstat -gcutil 34420
+    S0     S1     E      O      M     CCS    YGC     YGCT    FGC    FGCT     GCT   
+    0.00  61.77  68.33   0.01  91.72  85.36      3    0.183     0    0.000    0.183
+  admin@liuxiaohao-MacBook-Pro ~ % jstat -gcutil 34420
+    S0     S1     E      O      M     CCS    YGC     YGCT    FGC    FGCT     GCT   
+   80.60   0.00  27.57   0.02  91.72  85.36      4    0.250     0    0.000    0.250
+  admin@liuxiaohao-MacBook-Pro ~ %  jmap -dump:live,format=b,file=34420.hprof 34420  
+  Dumping heap to /Users/admin/34420.hprof ...
+  Heap dump file created
+  admin@liuxiaohao-MacBook-Pro ~ % jvisualvm
+  ```
+
+  
 
 
 
