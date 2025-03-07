@@ -3312,13 +3312,13 @@ public class ReentrantExample {
 
 ## AQS详解
 
-一、什么是 AQS？
+**一、什么是 AQS？**
 
 AQS（`AbstractQueuedSynchronizer`）是 Java 并发包（`java.util.concurrent`，简称 **JUC**）中的 。
 
 AQS 是一个抽象类，为同步器提供了通用的 **执行框架**。它定义了 **资源获取和释放的通用流程**，而具体的资源获取逻辑则由具体同步器通过重写模板方法来实现。 因此，可以将 AQS 看作是同步器的 **基础“底座”**，而同步器则是基于 AQS 实现的 **具体“应用”**，例如 **可重入锁**（`ReentrantLock`）、**信号量**（`Semaphore`）和 **倒计时器**（`CountDownLatch`）
 
-二、AQS核心思想
+**二、AQS核心思想**
 
 AQS 主要采用 **“状态 + CLH 等待队列”** 来管理线程的同步：
 
@@ -3558,7 +3558,7 @@ public class ThreadTest {
  *  相同点：两种方式都需要重写run(),将线程要执行的逻辑声明在run()中。
  */
 
-//1.创建一个实现了Runnable接口得类
+//1.创建一个实现了Runnable接口的类
 class MThread implements Runnable{
 
     //2.实现类去实现Runnable中的抽象方法:run()
@@ -3686,6 +3686,152 @@ public class UseCompletableFuture {
     }
 }
 ```
+
+
+
+## Future相关
+
+![image-20250306174023508](./java重点.assets/image-20250306174023508.png)
+
+
+
+**一、对于futuretask，还有一些带回调的future。然后这些 future，如果线程池没有处理完，主线程去 get 的时候可能会进行阻塞，你能把它内部阻塞的一个机制能说一下吗**
+
+* 整体逻辑
+
+  * **get方法逻辑**
+
+    * 首先检查任务的当前状态 `state`。
+
+    * 如果任务状态尚未完成（`state <= COMPLETING`），调用 `awaitDone()` 方法进入等待机制。
+
+    * 一旦状态变化（表明任务完成），通过 `report(s)` 返回结果或抛出异常。
+
+  * **awaitNode整体结构和逻辑**
+
+    * 首先检查当前 `state`：
+
+      - 如果任务完成（状态大于 `COMPLETING`），直接返回当前状态。
+
+      - 如果任务处于正在完成的状态（`COMPLETING`），主线程会调用 `Thread.yield()` 暂时放弃 CPU。
+
+      - 如果线程被中断，则移除等待节点，并抛出 `InterruptedException`。
+
+    * 如果任务未完成（状态为 `NEW`），当前线程会创建一个等待节点（`WaitNode`），并将其加入到任务的等待链表（通过 `WAITERS` 字段操作）。
+
+    * 挂起当前线程：
+
+      - 如果是限时等待（`timed == true`），计算剩余时间并调用 `LockSupport.parkNanos()` 挂起线程。
+
+      - 如果不是限时等待，直接调用 `LockSupport.park()` 挂起线程。
+
+    * 唤醒并继续：一旦任务完成，线程会被唤醒（通过 `LockSupport.unpark()`），并返回任务最终的状态值。
+
+* **源代码示例**
+
+  ```java
+    public V get() throws InterruptedException, ExecutionException {
+        int s = state;
+        if (s <= COMPLETING)
+            s = awaitDone(false, 0L);
+        return report(s);
+    }
+      private int awaitDone(boolean timed, long nanos)
+          throws InterruptedException {
+          // The code below is very delicate, to achieve these goals:
+          // - call nanoTime exactly once for each call to park
+          // - if nanos <= 0L, return promptly without allocation or nanoTime
+          // - if nanos == Long.MIN_VALUE, don't underflow
+          // - if nanos == Long.MAX_VALUE, and nanoTime is non-monotonic
+          //   and we suffer a spurious wakeup, we will do no worse than
+          //   to park-spin for a while
+          long startTime = 0L;    // Special value 0L means not yet parked
+          WaitNode q = null;
+          boolean queued = false;
+          for (;;) {
+              int s = state;
+              if (s > COMPLETING) {
+                  if (q != null)
+                      q.thread = null;
+                  return s;
+              }
+              else if (s == COMPLETING)
+                  // We may have already promised (via isDone) that we are done
+                  // so never return empty-handed or throw InterruptedException
+                  Thread.yield();
+              else if (Thread.interrupted()) {
+                  removeWaiter(q);
+                  throw new InterruptedException();
+              }
+              else if (q == null) {
+                  if (timed && nanos <= 0L)
+                      return s;
+                  q = new WaitNode();
+              }
+              else if (!queued)
+                  queued = WAITERS.weakCompareAndSet(this, q.next = waiters, q);
+              else if (timed) {
+                  final long parkNanos;
+                  if (startTime == 0L) { // first time
+                      startTime = System.nanoTime();
+                      if (startTime == 0L)
+                          startTime = 1L;
+                      parkNanos = nanos;
+                  } else {
+                      long elapsed = System.nanoTime() - startTime;
+                      if (elapsed >= nanos) {
+                          removeWaiter(q);
+                          return state;
+                      }
+                      parkNanos = nanos - elapsed;
+                  }
+                  // nanoTime may be slow; recheck before parking
+                  if (state < COMPLETING)
+                      LockSupport.parkNanos(this, parkNanos);
+              }
+              else
+                  LockSupport.park(this);
+          }
+      }
+  
+  ```
+
+  
+
+* **FutureTask使用示例**
+
+  ```java
+  import java.util.concurrent.*;
+  
+  public class FutureTaskExample {
+      public static void main(String[] args) throws Exception {
+          // 定义一个 Callable，用于封装任务
+          Callable<Integer> callableTask = () -> {
+              Thread.sleep(2000);  // 模拟耗时任务
+              return 42;
+          };
+  
+          // 将 Callable 封装为 FutureTask
+          FutureTask<Integer> futureTask = new FutureTask<>(callableTask);
+  
+          // 使用线程池执行 FutureTask
+          ExecutorService executor = Executors.newFixedThreadPool(2);
+          executor.submit(futureTask);
+  
+          // 主线程可以继续其他工作
+          System.out.println("主线程在处理其他任务...");
+  
+          // 获取异步任务返回的结果（阻塞）
+          Integer result = futureTask.get();
+          System.out.println("异步任务返回的结果: " + result);
+  
+          // 关闭线程池
+          executor.shutdown();
+      }
+  }
+  ```
+
+  
 
 
 
@@ -4061,10 +4207,67 @@ QPS=N/T
 
 ### 线程池刚创建的时候会不会创建线程
 
-* ScheduledThreadPool：会立即创建 `corePoolSize` 个线程，因为 `ScheduledThreadPoolExecutor` 预创建了核心线程，即使没有任务提交
-* 其他预设的线程池和自定义线程池：任务提交时创建
+* ScheduledThreadPool：会
+
+  ```JAVA
+  private void delayedExecute(RunnableScheduledFuture<?> task) {
+    if (isShutdown())
+        reject(task);
+    else {
+        super.getQueue().add(task);
+        if (!canRunInCurrentRunState(task) && remove(task))
+            task.cancel(false);
+        else
+            ensurePrestart();
+    }
+  }
+    void ensurePrestart() {
+        int wc = workerCountOf(ctl.get());
+        if (wc < corePoolSize)
+            addWorker(null, true);
+        else if (wc == 0)
+            addWorker(null, false);
+  }
+  ```
+
+  
+* 其他预设的线程池和自定义线程池：不会，除非调用主动调用 `prestartAllCoreThreads()`等
 
 
+
+### 对于定时线程池，底层是怎么做的呢？因为它是周期性的会去执行这个任务，它这种机制内部是怎么做
+
+* **基于延迟队列**：
+
+  - 使用 `DelayedWorkQueue` 存储任务，并根据触发时间进行排序。
+
+  - 延迟队列通过最小堆实现，确保队列首部始终是触发时间最短的任务。
+
+* **任务自调度**：
+
+  - 对于周期任务，任务在每次执行后重新计算下一次触发时间并重新加入队列，这种机制确保周期任务可以持续调度。
+
+  - 工作线程阻塞等待任务到期，避免不必要的资源消耗。
+
+* **线程安全**：
+  - 使用 `ReentrantLock` 和 `Condition` 实现线程安全。
+
+* **灵活性**：
+
+  - 支持延迟任务和周期任务两种类型。
+
+  - 提供 `ScheduledFuture` 对象，允许用户取消任务或查询任务状态。
+
+
+
+### 在开发的时候，可能我们的任务 a要产生任务b，然后任务 a 的往下执行可能要依赖任务 b 的结果。那如果说我把这两个任务都扔给线程池的话，它会出现什么样的问题
+
+**死锁问题**
+
+1. 任务 A 被提交到线程池后，它需要任务 B 的结果来继续执行。
+2. 任务 B 被提交到同一个线程池，但由于线程池中的所有线程可能已经被其他任务（包括任务 A）占用，任务 B 无法开始执行。
+3. 任务 A 由于依赖任务 B 的结果而阻塞，导致占用线程的任务无法释放资源。
+4. 此时，线程池没有空闲线程去执行任务 B，导致任务 A 和任务 B之间形成了 **资源等待环**。
 
 ## wait()和sleep()的区别?
 
