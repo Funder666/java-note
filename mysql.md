@@ -784,3 +784,9 @@ create table if not exists user
     index idx_unionId (unionId)
 ) comment '用户' collate = utf8mb4_unicode_ci;
 ```
+
+
+
+
+
+MySQL 如何建立索引？索引建太多的缺点？影响读还是写效率？

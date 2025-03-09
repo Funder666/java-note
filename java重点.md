@@ -4164,7 +4164,9 @@ Java 线程池主要通过 `java.util.concurrent.ExecutorService` 接口实现�
 
 4. 如果当前运行的线程数已经等同于最大线程数了，新建线程将会使当前运行的线程超出最大线程数，那么当前任务会被拒绝，拒绝策略会调用`RejectedExecutionHandler.rejectedExecution()`方法。
 
-![图解线程池实现原理](java重点.assets/thread-pool-principle.png)
+![图片1](./java重点.assets/图片1.png)
+
+
 
 ![线程池各个参数的关系](java重点.assets/relationship-between-thread-pool-parameters.png)
 
@@ -4230,7 +4232,6 @@ QPS=N/T
   }
   ```
 
-  
 * 其他预设的线程池和自定义线程池：不会，除非调用主动调用 `prestartAllCoreThreads()`等
 
 
