@@ -4121,38 +4121,50 @@ public class ExceptionUtils {
 
 
 
-**二、常见线程池**
-
-
-Java 线程池主要通过 `java.util.concurrent.ExecutorService` 接口实现，具体的线程池实现类主要在 `java.util.concurrent.Executors` 和 `java.util.concurrent.ThreadPoolExecutor` 类中。下面是几种常见的线程池类型及其用途：
-
-1. **FixedThreadPool**：固定数量的线程池。创建一个固定线程数的线程池，任何时候最多有N个线程处于活跃状态，并且如果一个线程因为执行异常而结束，那么线程池会补充一个新线程。
-2. **CachedThreadPool**：缓存线程池。创建一个可缓存线程的线程池，如果线程池的当前规模超出了处理需求，将回收空闲（60秒不执行任务）线程，当需求增加时，此线程池又可以智能的添加新线程来处理任务。此线程池不会对线程池大小做限制。
-3. **SingleThreadExecutor**：单线程化的线程池。创建一个单线程的Executor，确保所有的任务都在同一个线程中按顺序执行。
-4. **ScheduledThreadPool**：计划任务线程池。创建一个线程池，它可以安排在给定延迟后运行命令或者定期地执行。
-
-**三、线程池关键参数**
+**二、线程池关键参数**
 
 **线程池的关键参数**：
 
-- corePoolSize：核心池的大小。
-- maximumPoolSize：最大线程数。
-- keepAliveTime：当线程数大于核心时，这是多余空闲线程在终止前等待新任务的最长时间。
-- TimeUnit：keepAliveTime 的时间单位。
-- workQueue：用来存储等待执行的任务的阻塞队列。
-- threadFactory：线程工厂，用来创建线程。
-- handler：拒绝策略，当任务太多来不及处理，用来拒绝任务。
+```java
+public ThreadPoolExecutor(
+                          //核心线程数
+                          int corePoolSize, 
+                          //最大线程数
+                          int maximumPoolSize, 
+                          //线程空闲的存活时间
+                          long keepAliveTime, 
+                          //存活时间单位
+                          TimeUnit unit, 
+                          //阻塞任务队列
+                          BlockingQueue<Runnable> workQueue, 
+                          //线程工厂
+                          ThreadFactory threadFactory,
+                          //拒绝策略
+                          RejectedExecutionHandler handler)
+```
 
-**四、拒绝策略**
+**拒绝策略**
 
-**拒绝策略(RejectedExecutionHandler)**：
+* AbortPolicy：直接抛出异常，默认。
+* CallerRunsPolicy：只用调用者所在线程来运行任务。
+* DiscardPolicy：不处理，直接丢弃掉。
+* DiscardOldestPolicy：丢弃队列中等待最久的任务，然后把当前任务加入到队列中尝试再次提交
 
-1. **AbortPolicy**：直接抛出异常。
-2. **CallerRunsPolicy**：只用调用者所在线程来运行任务。
-3. **DiscardPolicy**：不处理，直接丢弃掉。
-4. **DiscardOldestPolicy**：丢弃队列中等待最久的任务，然后把当前任务加入到队列中尝试再次提交
+**阻塞队列**
 
-**五、工作原理**
+- SynchronousQueue（直接交接队列）
+  - **特点**：
+    - 使用 `SynchronousQueue` 作为工作队列时，不持有任务，而是将任务直接交给线程处理。
+    - 如果没有线程立即可用来处理任务，尝试将任务放入队列会失败，从而触发创建新线程。
+    - 通常需要设置一个**无限大的最大线程数**（`maximumPoolSize`），以避免任务被拒绝
+  - **优势**：
+    - 这种策略可以避**免任务因依赖关系导致死锁**（例如任务之间相互依赖时，线程被阻塞）。
+  - **潜在问题**：
+    - 如果任务到达的速度长期快于处理速度，线程数可能会无限增长，导致资源耗尽
+- LinkedBlockingQueue（无界队列）
+- ArrayBlockingQueue（有界队列）
+
+**三、工作原理**
 
 **工作原理**：
 
@@ -4169,6 +4181,18 @@ Java 线程池主要通过 `java.util.concurrent.ExecutorService` 接口实现�
 
 
 ![线程池各个参数的关系](java重点.assets/relationship-between-thread-pool-parameters.png)
+
+
+
+**四、常见线程池**
+
+
+Java 线程池主要通过 `java.util.concurrent.ExecutorService` 接口实现，具体的线程池实现类主要在 `java.util.concurrent.Executors` 和 `java.util.concurrent.ThreadPoolExecutor` 类中。下面是几种常见的线程池类型及其用途：
+
+1. **FixedThreadPool**：固定数量的线程池。创建一个固定线程数的线程池，任何时候最多有N个线程处于活跃状态，并且如果一个线程因为执行异常而结束，那么线程池会补充一个新线程。
+2. **CachedThreadPool**：缓存线程池。创建一个可缓存线程的线程池，如果线程池的当前规模超出了处理需求，将回收空闲（60秒不执行任务）线程，当需求增加时，此线程池又可以智能的添加新线程来处理任务。此线程池不会对线程池大小做限制。
+3. **SingleThreadExecutor**：单线程化的线程池。创建一个单线程的Executor，确保所有的任务都在同一个线程中按顺序执行。
+4. **ScheduledThreadPool**：计划任务线程池。创建一个线程池，它可以安排在给定延迟后运行命令或者定期地执行。
 
 
 
@@ -4197,13 +4221,131 @@ QPS=N/T
    U,多一个线程是为了可以在某些线程短暂阻塞或执行调度时，确保有足够的线程保特CPU繁忙，最大化CPU的利用率。
 2. 对于IO密集型任务（消耗IO资源），可以增大核心线程数为CPU核心数的2-4倍，可以提升并发执行任务的数量。
 
-### 线程执行完任务怎么通知阻塞队列
+
 
 ### 多个空闲线程怎么分配阻塞队列的任务
 
 * 如果任务队列里有任务，线程就会获取任务并执行。
-* 如果任务队列为空，线程会阻塞等待（或者超时返回）。
-* 如果等待超时，且当前线程数量超过核心线程数，线程会被回收
+
+* 如果任务队列为空，线程会阻塞等待或者超时返回。
+
+  * 如果线程都阻塞了，当有任务来的时候会唤醒（阻塞队列默认是非公平锁，所以会 jvm 会随机唤醒）
+  * 如果等待超时，且当前线程数量超过核心线程数，非核心线程会被回收（如果核心线程设置了allowCoreThreadTimeOut，则同样被回收）
+
+  ```java
+  final void runWorker(Worker w) {
+      Thread wt = Thread.currentThread();
+      Runnable task = w.firstTask;
+      w.firstTask = null;
+      w.unlock(); // allow interrupts
+      boolean completedAbruptly = true;
+      try {
+          while (task != null || (task = getTask()) != null) {
+              w.lock();
+              // If pool is stopping, ensure thread is interrupted;
+              // if not, ensure thread is not interrupted.  This
+              // requires a recheck in second case to deal with
+              // shutdownNow race while clearing interrupt
+              if ((runStateAtLeast(ctl.get(), STOP) ||
+                   (Thread.interrupted() &&
+                    runStateAtLeast(ctl.get(), STOP))) &&
+                  !wt.isInterrupted())
+                  wt.interrupt();
+              try {
+                  beforeExecute(wt, task);
+                  Throwable thrown = null;
+                  try {
+                      task.run();
+                  } catch (RuntimeException x) {
+                      thrown = x; throw x;
+                  } catch (Error x) {
+                      thrown = x; throw x;
+                  } catch (Throwable x) {
+                      thrown = x; throw new Error(x);
+                  } finally {
+                      afterExecute(task, thrown);
+                  }
+              } finally {
+                  task = null;
+                  w.completedTasks++;
+                  w.unlock();
+              }
+          }
+          completedAbruptly = false;
+      } finally {
+          processWorkerExit(w, completedAbruptly);
+      }
+  }
+  
+  private Runnable getTask() {
+      boolean timedOut = false; // Did the last poll() time out?
+  
+      for (;;) {
+          int c = ctl.get();
+          int rs = runStateOf(c);
+  
+          // Check if queue empty only if necessary.
+          if (rs >= SHUTDOWN && (rs >= STOP || workQueue.isEmpty())) {
+              decrementWorkerCount();
+              return null;
+          }
+  
+          int wc = workerCountOf(c);
+  
+          // Are workers subject to culling?
+          boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
+  
+          if ((wc > maximumPoolSize || (timed && timedOut))
+              && (wc > 1 || workQueue.isEmpty())) {
+              if (compareAndDecrementWorkerCount(c))
+                  return null;
+              continue;
+          }
+  
+          try {
+              Runnable r = timed ?
+                  workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
+                  workQueue.take();
+              if (r != null)
+                  return r;
+              timedOut = true;
+          } catch (InterruptedException retry) {
+              timedOut = false;
+          }
+      }
+  }
+  
+  private void processWorkerExit(Worker w, boolean completedAbruptly) {
+      if (completedAbruptly) // If abrupt, then workerCount wasn't adjusted
+          decrementWorkerCount();
+  
+      final ReentrantLock mainLock = this.mainLock;
+      mainLock.lock();
+      try {
+          completedTaskCount += w.completedTasks;
+          workers.remove(w);
+      } finally {
+          mainLock.unlock();
+      }
+  
+      tryTerminate();
+  
+      int c = ctl.get();
+      if (runStateLessThan(c, STOP)) {
+          if (!completedAbruptly) {
+              int min = allowCoreThreadTimeOut ? 0 : corePoolSize;
+              if (min == 0 && ! workQueue.isEmpty())
+                  min = 1;
+              if (workerCountOf(c) >= min)
+                  return; // replacement not needed
+          }
+          addWorker(null, false);
+      }
+  }
+  
+  ```
+
+  
 
 
 
