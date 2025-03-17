@@ -219,42 +219,49 @@ public class BusinessException extends RuntimeException {
 
 ### 反射详解
 
-**一、定义**
+* 定义：反射（Reflection） 是 Java 提供的一种机制，允许程序在运行时获取类的信息（如类名、方法、字段等），并动态调用方法或修改字段，即使这些方法和字段在编译时未知
 
-**反射（Reflection）** 是 Java 提供的一种机制，允许程序在运行时获取类的信息（如类名、方法、字段等），并**动态调用方法或修改字段**，即使这些方法和字段在编译时未知
+* 原理：反射首先是能够获取到Java中的反射类的字节码，然后将字节码中的方法，变量，构造函数等映射成 相应的 Method、Filed、Constructor 等类
 
-示例：使用反射调用方法
+* 好处
+  * **Java（有反射）**：
+    - 支持运行时加载类、调用方法，适合动态场景（如插件系统）。
+    - 示例：可以在运行时根据配置文件加载实现类。
+  * **无反射语言（如 C）**：
+    - 所有操作需在编译时确定，无法动态加载或操作未知类型。
+    - 限制：插件系统需要手动编写加载逻辑（如动态链接库），复杂且不灵活。
+* 场景：框架中、动态代理、注解（通过反射获取注解信息）
 
-```java
-import java.lang.reflect.Method;
+* 示例：使用反射调用方法
 
-class Person {
-    public void greet(String name) {
-        System.out.println("Hello, " + name);
-    }
-}
+  ```java
+  import java.lang.reflect.Method;
+  
+  class Person {
+      public void greet(String name) {
+          System.out.println("Hello, " + name);
+      }
+  }
+  
+  public class InvokeMethodExample {
+      public static void main(String[] args) throws Exception {
+          // 1. 获取 Person 类的 Class 对象
+          Class<?> clazz = Person.class;
+  
+          // 2. 创建 Person 实例
+          Object personInstance = clazz.getDeclaredConstructor().newInstance();
+  
+          // 3. 获取 greet 方法
+          Method method = clazz.getMethod("greet", String.class);
+  
+          // 4. 通过反射调用方法
+          method.invoke(personInstance, "Alice");
+      }
+  }
+  
+  ```
 
-public class InvokeMethodExample {
-    public static void main(String[] args) throws Exception {
-        // 1. 获取 Person 类的 Class 对象
-        Class<?> clazz = Person.class;
-
-        // 2. 创建 Person 实例
-        Object personInstance = clazz.getDeclaredConstructor().newInstance();
-
-        // 3. 获取 greet 方法
-        Method method = clazz.getMethod("greet", String.class);
-
-        // 4. 通过反射调用方法
-        method.invoke(personInstance, "Alice");
-    }
-}
-
-```
-
-**二、使用场景**
-
-框架中、动态代理、注解（通过反射获取注解信息）
+  
 
 ### 注解的详解
 
@@ -3014,7 +3021,7 @@ public class StrongReferenceExample {
 
 ![image-20230126101429135](java重点.assets/image-20230126101429135.png)
 
-java线程的状态：
+java线程的六个状态：
 
 - 线程**初始**状态：`NEW`
 - 线程**运行**状态：`RUNNABLE`
@@ -3030,7 +3037,13 @@ java线程的状态：
 1. BLOCKED是锁竞争失败后被被动触发的状态，WAITING是人为的主动触发的状态；
 2. BLCKED的唤醒时自动触发的，而WAITING状态是必须要通过特定的方法来主动唤醒。
 
+## 守护线程和非守护线程
 
+| 特性     | 守护线程           | 非守护线程                    |
+| -------- | ------------------ | ----------------------------- |
+| 生命周期 | JVM 退出时自动结束 | 直到任务完成或被显式终止      |
+| 适用场景 | 背景任务、定时任务 | 需要确保完成的核心业务任务    |
+| 影响     | 不会阻止 JVM 退出  | 会阻止 JVM 退出，直到线程完成 |
 
 ## 如果一个线程挂了会影响到其他线程吗
 
@@ -3050,11 +3063,20 @@ java线程的状态：
 
 ​	如果挂掉的是一个守护线程（后台线程），进程通常**不会**受到影响，因为守护线程的生命周期不直接影响进程的生命周期。
 
+
+
+### java开启线程的方式和操作系统开启线程的方式，两者有啥区别，两者开启的东西有啥区别
+
+* Java 线程是操作系统线程的封装，屏蔽了底层实现细节，提供了更友好的编程接口，而操作系统线程则是直接与硬件资源交互的更底层的执行单元。
+
+* 创建 java线程时，JVM会调用操作系统的方法，创建一个与java线程绑定的原生线程，一个 Java 线程通常对应一个操作系统线程（1:1 模型），但具体实现取决于 JVM（如 HotSpot JVM 默认使用原生线程）
+
+* 线程的调度是由操作系统负责的。
+* 当操作系统为线程分配好时间片以后，就会调用java线程的run方法执行该线程
+
 ## 什么线程安全与线程不安全？
 
 ​	多个线程访问共享变量时得到的运行结果与预期一致时就是线程安全的（或者说多线程并行运行的结果和单线程串行运行的结果能一致就是线程安全的）。通俗来说，加锁的就是线程安全的，不加锁就是线程不安全的。（要保证原子性、可见性和有序性）
-
-如何保证线程安全？
 
 
 
@@ -4170,15 +4192,15 @@ public class ExceptionUtils {
 ```java
 public ThreadPoolExecutor(
                           //核心线程数
-                          int corePoolSize, 
+                          int corePoolSize 🌟, 
                           //最大线程数
-                          int maximumPoolSize, 
+                          int maximumPoolSize 🌟, 
                           //线程空闲的存活时间
                           long keepAliveTime, 
                           //存活时间单位
                           TimeUnit unit, 
                           //阻塞任务队列
-                          BlockingQueue<Runnable> workQueue, 
+                          BlockingQueue<Runnable> workQueue 🌟, 
                           //线程工厂
                           ThreadFactory threadFactory,
                           //拒绝策略
@@ -4235,8 +4257,6 @@ Java 线程池主要通过 `java.util.concurrent.ExecutorService` 接口实现�
 2. **CachedThreadPool**：缓存线程池。创建一个可缓存线程的线程池，如果线程池的当前规模超出了处理需求，将回收空闲（60秒不执行任务）线程，当需求增加时，此线程池又可以智能的添加新线程来处理任务。此线程池不会对线程池大小做限制。
 3. **SingleThreadExecutor**：单线程化的线程池。创建一个单线程的Executor，确保所有的任务都在同一个线程中按顺序执行。
 4. **ScheduledThreadPool**：计划任务线程池。创建一个线程池，它可以安排在给定延迟后运行命令或者定期地执行。
-
-
 
 ### 线程数和QPS之间的关系
 
@@ -4450,9 +4470,166 @@ QPS=N/T
 **死锁问题**
 
 1. 任务 A 被提交到线程池后，它需要任务 B 的结果来继续执行。
+
 2. 任务 B 被提交到同一个线程池，但由于线程池中的所有线程可能已经被其他任务（包括任务 A）占用，任务 B 无法开始执行。
+
 3. 任务 A 由于依赖任务 B 的结果而阻塞，导致占用线程的任务无法释放资源。
+
 4. 此时，线程池没有空闲线程去执行任务 B，导致任务 A 和任务 B之间形成了 **资源等待环**。
+
+   
+
+### 我在父线程中创建了一个线程池，线程池如果没运行完，父线程关闭了，线程池还能继续运行吗？
+
+1. **默认行为**：线程池中的线程是非守护线程，即使父线程结束，线程池中的线程仍会继续运行，直到任务完成或线程池被关闭。
+2. **显式关闭线程池**：调用 `shutdown()` 或 `shutdownNow()` 可以主动关闭线程池，停止任务的执行。
+3. **JVM退出**：即使父线程结束，只要线程池中的线程仍在运行，JVM不会退出。只有当所有非守护线程结束时，JVM才会退出。
+
+```JAVA
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class ThreadPoolExample {
+    public static void main(String[] args) {
+        System.out.println("父线程开始");
+
+        // 创建一个线程池
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+        // 提交任务到线程池
+        executorService.submit(() -> {
+            try {
+                System.out.println("任务1开始运行");
+                Thread.sleep(3000); // 模拟任务耗时
+                System.out.println("任务1运行结束");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        executorService.submit(() -> {
+            try {
+                System.out.println("任务2开始运行");
+                Thread.sleep(5000); // 模拟任务耗时
+                System.println("任务2运行结束");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        System.out.println("父线程结束");
+        // 父线程不会显式关闭线程池，线程池会继续运行未完成任务
+    }
+}
+
+```
+
+
+
+### 拒绝策略触发后如果将任务重新放入线程池会有什么问题，要怎么解决
+
+如果拒绝策略触发后直接将任务重新提交到线程池，可能导致无限循环或任务堆积（进而内存溢出）。解决方案包括：
+
+1. 调整线程池配置，增加容量。
+2. 使用延迟重试机制避免无限循环。
+3. 将任务保存到外部队列，由其他线程定时处理。
+
+### 线程池内部，它其实每个线程都是一个worker，你能说这个 worker 他去执行任务的一个逻辑是什么样的？每根线程它都有一个 run 方法，run 里面的内部底层执行逻辑是什么样的？
+
+- 每个 `Worker` 都包含一个真正的线程（通常称为 `thread`），负责从任务队列中获取任务并执行。
+
+- `Worker` 的 `run` 方法实际上调用了 `runWorker` 方法。
+
+- `runWorker` 中包含一个循环，负责不断从队列中获取任务并执行，直到线程池关闭或没有任务可执行。
+
+  ```java
+  final void runWorker(Worker w) {
+      Thread wt = Thread.currentThread();
+      Runnable task = w.firstTask;
+      w.firstTask = null;
+      w.unlock(); // allow interrupts
+      boolean completedAbruptly = true;
+      try {
+          while (task != null || (task = getTask()) != null) {
+              w.lock();
+              // If pool is stopping, ensure thread is interrupted;
+              // if not, ensure thread is not interrupted.  This
+              // requires a recheck in second case to deal with
+              // shutdownNow race while clearing interrupt
+              if ((runStateAtLeast(ctl.get(), STOP) ||
+                   (Thread.interrupted() &&
+                    runStateAtLeast(ctl.get(), STOP))) &&
+                  !wt.isInterrupted())
+                  wt.interrupt();
+              try {
+                  beforeExecute(wt, task);
+                  Throwable thrown = null;
+                  try {
+                      task.run();
+                  } catch (RuntimeException x) {
+                      thrown = x; throw x;
+                  } catch (Error x) {
+                      thrown = x; throw x;
+                  } catch (Throwable x) {
+                      thrown = x; throw new Error(x);
+                  } finally {
+                      afterExecute(task, thrown);
+                  }
+              } finally {
+                  task = null;
+                  w.completedTasks++;
+                  w.unlock();
+              }
+          }
+          completedAbruptly = false;
+      } finally {
+          processWorkerExit(w, completedAbruptly);
+      }
+  }
+  ```
+
+- `getTask` 方法是获取任务的关键逻辑，支持阻塞等待或超时退出。
+
+
+
+### 从线程池开启开始，到提交任务，再到shutdown，中间线程池状态怎么变化的
+
+- RUNNING：能接受新提交的任务，并且也能处理阻塞队列中的任务。
+- SHUTDOWN：关闭状态，不再接受新提交的任务，但却可以处理阻塞队列中已保存的任务。
+- STOP：关闭状态，不再接受新提交的任务，也不处理阻塞队列中的任务，并且会中断正在处理任务的线程。
+- TIDYING：所有的任务都已经终止，workerCount（即有效线程数）为0。
+- TERMINATED：在terminated()方法执行完后进入该状态。
+
+![0c1c460b-d75a-4bea-a157-e0bac5731ccd](./java重点.assets/0c1c460b-d75a-4bea-a157-e0bac5731ccd.png)
+
+### 从线程池开启开始，到提交任务到核心线程中处理，再把任务丢到阻塞队列，再到最大线程，再到拒绝策略，中间，核心线程池中线程的状态是怎么变化的，最大线程池中的线程状态是怎么变化的
+
+**核心线程**：
+
+- 一旦创建，状态从 NEW 到 RUNNABLE，执行任务时可能变为 TIMED_WAITING 或 WAITING。
+- 任务完成后从队列取任务，保持存活，不会轻易销毁。
+
+**非核心线程**：
+
+- 在队列满后创建，状态类似核心线程。
+- 任务完成后，若队列为空且超过 keepAliveTime，销毁为 TERMINATED，poolSize 减小。
+
+**线程池状态**：
+
+- 整个过程保持 RUNNING，除非调用 shutdown 或 shutdownNow。
+
+
+
+### 线程池源码看过吗？里面有什么同步机制呢？
+
+| 同步机制      | 作用                   | 使用场景                   |
+| ------------- | ---------------------- | -------------------------- |
+| ReentrantLock | 保护线程集合和关闭操作 | 添加/移除 Worker、shutdown |
+| AtomicInteger | 原子更新状态和线程数   | ctl 的状态变更、线程计数   |
+| BlockingQueue | 线程安全的任务队列     | 任务入队和出队             |
+| AQS (Worker)  | 保护 Worker 的任务执行 | 任务运行、中断处理         |
+
+
 
 ## wait()和sleep()的区别?
 
@@ -6307,3 +6484,122 @@ public @interface SpringBootConfiguration {
 10. 过滤器链chain.doFilter之后的执行
 
 就是在springmvc的执行流程前后加上了tomcat容器的过滤器
+
+
+
+# Maven
+
+## Maven构建java工程的编译过程
+
+* 解析POM文件
+
+  - Maven 首先读取项目根目录下的 pom.xml 文件。
+
+  - pom.xml 定义了项目的依赖、插件、构建配置等信息。
+
+  - 例如，指定 JDK 版本和编译器插件：
+
+* 下载依赖
+
+  - Maven 检查 pom.xml 中定义的依赖（如 dependencies 部分）。
+
+  - 从本地仓库（默认位于 ~/.m2/repository）或远程仓库（如 Maven Central）下载所需的库。
+
+  - 这些依赖会在编译时被加入到类路径中。
+
+* 执行编译阶段
+
+  - Maven 调用 maven-compiler-plugin 的 compile 目标。
+
+  - 默认情况下，Maven 会查找 src/main/java 目录下的所有 .java 文件。
+
+  - 使用配置的 JDK（由 <source> 和 <target> 指定）将这些 .java 文件编译成 .class 文件。
+
+  - 编译后的 .class 文件输出到 target/classes 目录。
+
+* 处理资源文件
+
+  - 在编译之前，Maven 还会执行 process-resources 阶段。
+
+  - 将 src/main/resources 下的资源文件（如配置文件、静态资源等）复制到 target/classes 目录，与编译后的 .class 文件放在一起。
+
+* 错误检查
+
+  - 如果代码中有语法错误或依赖缺失，编译会失败，Maven 会输出具体的错误信息。
+
+  - 例如：cannot find symbol 表示某个类或方法未找到。
+
+## 在Maven中，如果遇到了两个jar包冲突，怎么解决
+
+一、定义
+
+​	Maven 中，当遇到两个 JAR 包冲突时，通常是因为项目依赖了不同版本的同一个 jar 包，这可能导致运行时错误（如 NoSuchMethodError 或 ClassNotFoundException）。
+
+二、原理
+
+A->B->C->D1(log 15.0)：A中包含对B的依赖，B中包含对C的依赖，C中包含对D1的依赖，假设是D1是日志jar包，version为15.0
+
+E->F->D2(log 16.0)：E中包含对F的依赖，F包含对D2的依赖，假设是D2是同一个日志jar包，version为16.0
+
+当pom.xml文件中引入A、E两个依赖后，根据Maven传递依赖的原则，D1、D2都会被引入，而D1、D2是同一个依赖D的不同版本。当我们在调用D2中的method1()方法，而D1中是15.0版本（method1可能是D升级后增加的方法），可能没有这个方法，这样JVM在加载A中D1依赖的时候，找不到method1方法，就会报NoSuchMethodError的错误，此时就产生了jar包冲突。
+
+
+二、 Maven中jar包冲突的解决方案
+
+* Maven默认处理策略
+
+  - 最短路径优先：Maven 面对 D1 和 D2 时，会默认选择最短路径的那个 jar 包，即 D2。E->F->D2 比 A->B->C->D1 路径短 1。
+
+  - 最先声明优先：如果路径一样的话，如： A->B->C1, E->F->C2 ，两个依赖路径长度都是 2，那么就选择最先声明。
+
+* 移除依赖：用于排除某项依赖的依赖jar包
+  * 工具排除：我们可以借助Maven Helper插件中的Dependency Analyzer分析冲突的jar包，然后在对应标红版本的jar包上面点击exclude，就可以将该jar包排除出去。
+  * 手动排除：或者手动在pom.xml中使用`<exclusion>`标签去排除冲突的jar包（上面利用插件Maven Helper中的exclude方法其实等同于该方法）
+
+* 使用 <dependencyManagement> 统一版本
+
+  * 首先定义一个父pom.xml，将公共依赖放在该pom.xml中进行声明
+
+    ```xml
+    <properties>
+        <spring.version>spring4.2.4</spring.version>
+    <properties>
+    
+    <dependencyManagement>
+        <dependencies>
+    		<dependency>
+    			<groupId>org.springframework</groupId>
+    			<artifactId>spring-beans</artifactId>
+    			<version>${spring.versio}</version>
+    		</dependency>
+    	</dependencies>
+    </dependencyManagement>
+    ```
+
+  * 这样如moduleA和moduleB在引用Spring-beans jar包的时候，直接使用父pom.xml中定义的公共依赖就可以：
+    moduleA在其pom.xml使用spring-bean的jar包(不用再定义版本)：
+
+    ```xml
+    <dependencies>
+    	<dependency>
+    		<groupId>org.springframework</groupId>
+    		<artifactId>spring-beans</artifactId>
+    	</dependency>
+    </dependencies>
+    
+    ```
+
+    
+
+## Maven 打包方式区别 pom jar war
+
+| 特性         | POM                                                      | JAR                      | WAR                                  |
+| ------------ | -------------------------------------------------------- | ------------------------ | ------------------------------------ |
+| **打包类型** | 无实际产物，仅 pom.xml                                   | Java 库或可执行文件      | Web 应用                             |
+| **输出文件** | 无                                                       | .jar 文件                | .war 文件                            |
+| **目录结构** | 无需源代码                                               | src/main/java 等         | src/main/webapp 等                   |
+| **主要用途** | 用于多模块项目的父项目，或仅需管理依赖而不生成产物的场景 | 工具库、独立应用         | 专为 Web 应用设计，需部署到 Web 容器 |
+| **运行方式** | 不运行                                                   | java -jar 或作为依赖使用 | 部署到 Web 容器（如 Tomcat）         |
+| **依赖管理** | 可统一管理子模块依赖                                     | 包含运行时依赖           | 依赖放入 WEB-INF/lib                 |
+
+​	传统的 Web 应用使用 WAR 打包，部署到外部 Web 容器（如 Tomcat、Jetty）中运行。而现代框架（如 Spring Boot）引入了**嵌入式服务器**（embedded server）的概念，使得 JAR 包也能直接运行 Web 应用。
