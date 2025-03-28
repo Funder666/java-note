@@ -2553,7 +2553,7 @@ public class DeepCopyWithSerialization {
   
 * 分代回收算法：收集器根据对象存活的不同生命周期将堆分为了新生代和老年代两个区域。新生代存活生命周期短的对象（如刚生成的对象），老年代存放生命周期长的对象。空间占比，默认为新生代：老年代=1：2。
 
-  ​	一般来说是将新生代划分为一块较大的Eden空间和两块较小的Survivor空间，每次使用Eden空间和其中的一块Survivor空间，当进行回收时，将Eden和Survivor中还存活的对象复制到另一块Survivor空间中，然后清理掉Eden和刚才使用过的Survivor空间。
+  * 一般来说是将新生代划分为一块较大的Eden空间和两块较小的Survivor空间，每次使用Eden空间和其中的一块Survivor空间，当进行回收时，将Eden和Survivor中还存活的对象复制到另一块Survivor空间中，然后清理掉Eden和刚才使用过的Survivor空间。
 
   * 新生代：区域分为eden、survivor from和survivor to三个部分，默认占比是8：1：1，采用的是标记复制算法。
     * 首先新生成的对象放在eden区
@@ -2610,7 +2610,9 @@ public class DeepCopyWithSerialization {
     
     * **可预测的停顿时间**：G1 GC通过建立一个可预测的停顿时间模型，允许用户明确指定在一个特定时间片段内，垃圾收集所造成的停顿时间不得超过某个阈值。这使得G1 GC非常适合需要严格控制停顿时间的应用场景
 
+### 为什么要分新生代和老年代
 
+​	这种分代的根本原因是**对象的生命周期特性**：大多数对象生命周期很短，少数对象生命周期很长。通过将内存分为新生代和老年代，可以针对不同生命周期的对象采用不同的回收策略，从而提高效率。
 
 
 ###  CMS和G1区别？
@@ -3429,23 +3431,24 @@ public class ReentrantExample {
 
 **一、什么是 AQS？**
 
-AQS（`AbstractQueuedSynchronizer`）是 Java 并发包（`java.util.concurrent`，简称 **JUC**）中的 。
+AQS 全称 AbstractQueuedSynchronizer（抽象队列同步器），是 Java JUC 包的核心组件，是一种提供原子式管理同步状态、阻塞和唤醒线程功能以及队列模型的简单框架。ReentrantLock、ReentrantReadWriteLock、Semaphore、CountDownLatch 等底层都是基于 AQS 来实现的。
 
-AQS 是一个抽象类，为同步器提供了通用的 **执行框架**。它定义了 **资源获取和释放的通用流程**，而具体的资源获取逻辑则由具体同步器通过重写模板方法来实现。 因此，可以将 AQS 看作是同步器的 **基础“底座”**，而同步器则是基于 AQS 实现的 **具体“应用”**，例如 **可重入锁**（`ReentrantLock`）、**信号量**（`Semaphore`）和 **倒计时器**（`CountDownLatch`）
+核心原理:AQS通过一个volitile修饰的state状态变量来表示同步状态,并通过一个先进先出的FIFO队列来管理获取同步状态失败的线程。线程通过CAS的方式去修改state状态,尝试获取同步资源,失败后会被包装为一个Node,放入等待队列。当同步资源被释放后,按照队列先后顺序进行唤醒。）
 
 **二、AQS核心思想**
 
-AQS 主要采用 **“状态 + CLH 等待队列”** 来管理线程的同步：
+AQS 主要采用 **“同步状态 + CLH 等待队列”** 来管理线程的同步：
 
-1. **用 `int state` 变量表示同步状态**（如锁是否被占用）
-
+1. **用 `volatile int state` 变量表示同步状态**（如锁是否被占用）
    * **`state == 0`**：表示锁是空闲的，当前线程可以尝试获取锁
 
-   * **`state > 0`**：表示锁已被其他线程持有，当前线程需要进入 **等待队列**。
+   * **`state > 0`**：表示锁已被其他线程持有，当前线程需要进入等待队列。
 
-2. **使用 CAS（Compare-And-Swap）修改 `state` 变量** 以保证线程安全。
+2. 线程通过CAS的方式去修改state状态,尝试获取同步资源
 
-3. **如果 CAS 失败，当前线程进入 CLH 变体队列（FIFO 等待队列），等待唤醒**。
+3. 如果 CAS 失败，当前线程会被包装为一个Node进入 CLH 变体队列（FIFO 等待队列），等待唤醒。
+
+4. 当锁被释放后，唤醒队列头部的线程（非公平锁则可能抢占）
 
 
 
@@ -3480,9 +3483,76 @@ ReentrantLock是基于AQS实现的,基本实现可以概括为：先通过CAS尝
 >
 > `ReentrantLock` **并没有直接继承 `AQS`**，而是 **内部持有 `AQS` 的子类 `Sync`** 来完成锁的管理。
 
-![image-20250127220511675](java重点.assets/image-20250127220511675.png)
+**非公平锁**
 
-详解:以可重入的互斥锁 `ReentrantLock` 为例，它的内部维护了一个 `state` 变量，用来表示锁的占用状态。`state` 的初始值为 0，表示锁处于未锁定状态。当线程 A 调用 `lock()` 方法时，会尝试通过 `tryAcquire()` 方法独占该锁，并让 `state` 的值加 1。如果成功了，那么线程 A 就获取到了锁。如果失败了，那么线程 A 就会被加入到一个等待队列（CLH 变体队列）中，直到其他线程释放该锁。假设线程 A 获取锁成功了，释放锁之前，A 线程自己是可以重复获取此锁的（`state` 会累加）。这就是可重入性的体现：一个线程可以多次获取同一个锁而不会被阻塞。但是，这也意味着，一个线程必须释放与获取的次数相同的锁，才能让 `state` 的值回到 0，也就是让锁恢复到未锁定状态。只有这样，其他等待的线程才能有机会获取该锁。
+* 直接进行 CAS,失败后进入AQS的acquire()方法，acquire方法先执行一次基类(sync)的nonfairTryAcquire()方法，也就是CAS操作，尝试去获取锁，如果没获取到，返回false，线程进入阻塞队列。
+
+  ```java
+  static final class NonfairSync extends Sync {
+      private static final long serialVersionUID = 7316153563782823691L;
+  
+      /**
+       * Performs lock.  Try immediate barge, backing up to normal
+       * acquire on failure.
+       */
+      final void lock() {
+          if (compareAndSetState(0, 1))
+              setExclusiveOwnerThread(Thread.currentThread());
+          else
+              acquire(1);
+      }
+  
+      protected final boolean tryAcquire(int acquires) {
+          return nonfairTryAcquire(acquires);
+      }
+  }
+  ```
+
+  
+
+**公平锁**
+
+* 先判断队列是否为空，为空才进行 CAS,否则直接进入阻塞队列
+
+  ```java
+  static final class FairSync extends Sync {
+  	private static final long serialVersionUID = -3000897897090466540L;
+  
+    final void lock() {
+        acquire(1);
+    }
+  
+    /**
+     * Fair version of tryAcquire.  Don't grant access unless
+     * recursive call or no waiters or is first.
+     */
+    protected final boolean tryAcquire(int acquires) {
+        final Thread current = Thread.currentThread();
+        int c = getState();
+        if (c == 0) {
+            if (!hasQueuedPredecessors() &&
+                compareAndSetState(0, acquires)) {
+                setExclusiveOwnerThread(current);
+                return true;
+            }
+        }
+        else if (current == getExclusiveOwnerThread()) {
+            int nextc = c + acquires;
+            if (nextc < 0)
+                throw new Error("Maximum lock count exceeded");
+            setState(nextc);
+            return true;
+        }
+        return false;
+    }
+  }
+  ```
+
+**为什么非公平锁性能好**
+	非公平锁对锁的竞争是抢占式的（队列中线程除外），线程在进入等待队列前可以进行两次尝试，这大大增加了获取锁的机会。这种好处体现在两个方面：
+
+* 线程不必加入等待队列就可以获得锁，不仅免去了构造结点并加入队列的繁琐操作，同时也节省了线程阻塞唤醒的开销，线程阻塞和唤醒涉及到线程上下文的切换和操作系统的系统调用，是非常耗时的。在高并发情况下，如果线程持有锁的时间非常短，短到线程入队阻塞的过程超过线程持有并释放锁的时间开销，那么这种抢占式特性对并发性能的提升会更加明显。
+* 减少CAS竞争，如果线程必须要加入阻塞队列才能获取锁，那入队时CAS竞争将变得异常激烈，CAS操作虽然不会导致失败线程挂起，但不断失败重试导致的对CPU的浪费也不能忽视。
 
 ## ReentrantLock和Syncronized区别
 
